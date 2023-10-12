@@ -189,14 +189,22 @@ impl Error
 
     #[cfg(feature = "backtrace")]
     #[allow(dead_code)]
-    fn backtrace(&self) -> Option<&Backtrace>
+    fn inner_backtrace(&self) -> Option<&Backtrace>
     {
-        if let ErrorKind::External(ErrorSource::Libusb(err)) = &self.kind {
-            Some(&err.backtrace)
-        } else if let ErrorKind::External(ErrorSource::DfuLibusb(dfu_libusb::Error::LibUsb(err))) = &self.kind {
-            Some(&err.backtrace)
-        } else {
-            Some(&self.backtrace)
+        match &self.kind {
+            ErrorKind::External(ErrorSource::Libusb(err)) => Some(&err.backtrace),
+            ErrorKind::External(ErrorSource::DfuLibusb(dfu_libusb::Error::LibUsb(err))) => Some(&err.backtrace),
+            _ => None
+        }
+    }
+
+    #[cfg(feature = "backtrace")]
+    #[allow(dead_code)]
+    fn outer_backtrace(&self) -> Option<&Backtrace>
+    {
+        match self.backtrace.status() {
+            BacktraceStatus::Captured => Some(&self.backtrace),
+            _ => None
         }
     }
 }
@@ -213,11 +221,18 @@ impl Display for Error
 
         #[cfg(feature = "backtrace")]
         {
-            let backtrace = self.backtrace();
+            let backtrace = self.inner_backtrace();
             if let Some(backtrace) = backtrace {
                 if backtrace.status() == BacktraceStatus::Captured {
                     write!(f, "\nBacktrace:\n{}", backtrace)?;
                 }
+            }
+
+            let backtrace = self.outer_backtrace();
+            if let Some(backtrace) = backtrace {
+                // The Box guarantees this is different from the above
+                // since it is an unique_ptr over it
+                write!(f, "\nOuter Backtrace:\n{}", backtrace)?;
             }
         }
 
